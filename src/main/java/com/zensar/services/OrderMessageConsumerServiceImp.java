@@ -16,12 +16,6 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.exc.StreamReadException;
-import com.fasterxml.jackson.databind.DatabindException;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.zensar.config.OrderMessageConsumerConfig;
 import com.zensar.config.OrderMessageConsumerConfig.QueueType;
@@ -69,6 +63,23 @@ public class OrderMessageConsumerServiceImp implements OrderMessageConsumerServi
 		return orderMessage;
 	}
 
+	private FulfillmentOrderEntity generateFulfillmentOrderEntityFromDto(FulfillmentOrder fulfillmentOrder) {
+		if (fulfillmentOrder == null) {
+			return null;
+		}
+		FulfillmentOrderEntity fulfillmentOrderEntity = this.modelMapper.map(fulfillmentOrder,
+				FulfillmentOrderEntity.class);
+		return fulfillmentOrderEntity;
+	}
+
+	private FulfillmentOrder generateFulfillmentOrderDtoFromEntity(FulfillmentOrderEntity fiEntity) {
+		if (fiEntity == null) {
+			return null;
+		}
+		FulfillmentOrder fulfillmentOrder = this.modelMapper.map(fiEntity, FulfillmentOrder.class);
+		return fulfillmentOrder;
+	}
+
 	@Override
 	public List<FulfillmentOrder> getXmlMessages() {
 
@@ -87,7 +98,7 @@ public class OrderMessageConsumerServiceImp implements OrderMessageConsumerServi
 
 				if (fulfillmentOrder != null) {
 
-					FulfillmentOrderEntity fulfillmentOrderEntity = convertFulfillmentorderIntoFulfillmentorderEntity(
+					FulfillmentOrderEntity fulfillmentOrderEntity = generateFulfillmentOrderEntityFromDto(
 							fulfillmentOrder);
 					fulfillmentOrderRepo.saveAndFlush(fulfillmentOrderEntity);
 					fullFulfillmentOrders.add(fulfillmentOrder);
@@ -119,13 +130,13 @@ public class OrderMessageConsumerServiceImp implements OrderMessageConsumerServi
 		for (int i = 0; i < requestCount; i++) {
 
 			try {
-				
-				String jsonString =new String((byte[]) jsontemplate.receiveAndConvert(QueueType.JSON_QUEUE));
-				jsonString =cleanUpJsonBOM(jsonString);
-				OrderMessage orderMessage = new ObjectMapper().readValue(jsonString
-						, OrderMessage.class);
-				System.out.println("json string is : " + orderMessage.toString());
-//				OrderMessage orderMessage =  (OrderMessage) jsontemplate.receiveAndConvert(QueueType.JSON_QUEUE);
+
+//				String jsonString =new String((byte[]) jsontemplate.receiveAndConvert(QueueType.JSON_QUEUE));
+//				jsonString =cleanUpJsonBOM(jsonString);
+//				OrderMessage orderMessage = new ObjectMapper().readValue(jsonString
+//						, OrderMessage.class);
+//				System.out.println("json string is : " + orderMessage.toString());
+				OrderMessage orderMessage = (OrderMessage) jsontemplate.receiveAndConvert(QueueType.JSON_QUEUE);
 				OrderMessageEntity orderEntity = generateOrderMessageEntityFromDto(orderMessage);
 				OrderMessageEntity effectedEntity = null;
 
@@ -149,17 +160,6 @@ public class OrderMessageConsumerServiceImp implements OrderMessageConsumerServi
 		}
 
 		return orderMessages;
-	}
-
-	public FulfillmentOrderEntity convertFulfillmentorderIntoFulfillmentorderEntity(FulfillmentOrder order) {
-		FulfillmentOrderEntity fulfillmentOrderEntity = new FulfillmentOrderEntity();
-
-		fulfillmentOrderEntity.orderID = order.orderID;
-		fulfillmentOrderEntity.orderStatus = order.orderStatus;
-		fulfillmentOrderEntity.orderStatusCode = order.orderStatusCode;
-		fulfillmentOrderEntity.orderStatusDescription = order.orderStatusDescription;
-		fulfillmentOrderEntity.orderTypeCode = order.orderTypeCode;
-		return fulfillmentOrderEntity;
 	}
 
 }

@@ -1,5 +1,7 @@
 package com.zensar.entity;
 
+import java.io.Serializable;
+
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
@@ -7,7 +9,7 @@ import javax.persistence.Table;
 
 @Entity
 @Table(name="SOURCE")
-public class SourceEntity {
+public class SourceEntity implements Serializable {
 	
 	@Id
 	@GeneratedValue
