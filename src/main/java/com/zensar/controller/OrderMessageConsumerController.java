@@ -18,12 +18,12 @@ public class OrderMessageConsumerController {
 	
 	@GetMapping(value="/consume/xml")
 	public void retrieveXmlMessages() {
-		this.orderMessageConsumerService.retrieveXmlMessages();
+		this.orderMessageConsumerService.getXmlMessages();
 	}
 	
 	@GetMapping(value= "/consume/json")
 	public void retrieveJsonMessages() {
-		this.orderMessageConsumerService.retrieveJsonMessages();
+		this.orderMessageConsumerService.getJsonMessages();
 		
 	}
 

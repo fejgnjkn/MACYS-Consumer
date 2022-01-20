@@ -1,8 +1,17 @@
 package com.zensar.services;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Properties;
+import java.util.Set;
 
+import org.modelmapper.ModelMapper;
+import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -15,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.zensar.config.OrderMessageConsumerConfig;
+import com.zensar.config.OrderMessageConsumerConfig.QueueType;
 import com.zensar.dto.FulfillmentOrder;
 import com.zensar.dto.OrderMessage;
 import com.zensar.entity.FulfillmentOrderEntity;
@@ -27,95 +37,129 @@ public class OrderMessageConsumerServiceImp implements OrderMessageConsumerServi
 
 	@Autowired
 	OrderMessageConsumerRepo orderMessageRepo;
-	
+
 	@Autowired
 	FulfillmentOrderRepo fulfillmentOrderRepo;
 
 	@Autowired
-	RabbitTemplate rabbitTemplate;
+	AmqpTemplate xmlAmpqTempleate;
 
-	@Override
-	public void retrieveJsonMessages() {
+	@Autowired
+	AmqpTemplate jsontemplate;
 
-		OrderMessage orderMessage = null;
-		Object object = this.rabbitTemplate.receiveAndConvert(OrderMessageConsumerConfig.QueueType.QUEUE_1);
-		if (object instanceof OrderMessage) {
-			orderMessage = (OrderMessage) object;
-			System.out.println("Message received ");
-		} else {
-			System.out.println("Message is not available/error");
-		}
+	@Autowired
+	RabbitAdmin rabbitAdmin;
 
-		System.out.println("Json parsed successfully ");
-
-		if (orderMessage != null) {
-			OrderMessageEntity entity = generateOrderMessageEntityFromDto(orderMessage);
-			orderMessageRepo.saveAndFlush(entity);
-		}
-
-	}
+	@Autowired
+	ModelMapper modelMapper;
 
 	private OrderMessageEntity generateOrderMessageEntityFromDto(OrderMessage orderMessage) {
 		if (orderMessage == null) {
 			return null;
 		}
+		OrderMessageEntity orderMessageEntity = this.modelMapper.map(orderMessage, OrderMessageEntity.class);
+		return orderMessageEntity;
+	}
 
-		return new OrderMessageEntity(orderMessage.getMessageName(), orderMessage.getCommand(),
-				orderMessage.getItemName(), orderMessage.getItemDescription(), orderMessage.getItemLength(),
-				orderMessage.getItemWidth(), orderMessage.getItemHeight(), orderMessage.getItemWeight(),
-				orderMessage.getImagePathname(), orderMessage.getRfidTagged(), orderMessage.getStorageAttribute(),
-				orderMessage.getPickType());
-
+	private OrderMessage generateOrderMessageDtoFromEntity(OrderMessageEntity orderEntity) {
+		if (orderEntity == null) {
+			return null;
+		}
+		OrderMessage orderMessage = this.modelMapper.map(orderEntity, OrderMessage.class);
+		return orderMessage;
 	}
 
 	@Override
-	public void retrieveXmlMessages() {
-		String xmlString= null;
-		Object object = this.rabbitTemplate.receiveAndConvert(OrderMessageConsumerConfig.QueueType.QUEUE_2);
-		if (object instanceof String) {
-			xmlString= (String)object;
+	public List<FulfillmentOrder> getXmlMessages() {
+
+		List<FulfillmentOrder> fullFulfillmentOrders = new ArrayList<>();
+		Properties properties = rabbitAdmin.getQueueProperties(OrderMessageConsumerConfig.QueueType.XML_QUEUE);
+		int requestCount = 0;
+		if (properties != null) {
+			requestCount = (int) properties.get(RabbitAdmin.QUEUE_MESSAGE_COUNT);
 		}
 
-		FulfillmentOrder order = null;
-		
-		if(xmlString == null || xmlString.isEmpty()) {
-			System.out.println("Xml string is null or empty");
-			return;
-		}
+		for (int i = 0; i < requestCount; i++) {
+			try {
 
-		XmlMapper mapper = new XmlMapper();
-		try {
-			order = mapper.readValue(xmlString.getBytes(), FulfillmentOrder.class);
-		} catch (StreamReadException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (DatabindException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+				FulfillmentOrder fulfillmentOrder = new XmlMapper()
+						.readValue(new String((byte[]) xmlAmpqTempleate.receiveAndConvert()), FulfillmentOrder.class);
 
-		System.out.println("Xml parsed " );
-		
-		if(order!=null) {
-			FulfillmentOrderEntity entity= generateFulfillmentOrderEntityFromDto(order);
-			this.fulfillmentOrderRepo.saveAndFlush(entity);
-		}
-		
+				if (fulfillmentOrder != null) {
 
+					FulfillmentOrderEntity fulfillmentOrderEntity = convertFulfillmentorderIntoFulfillmentorderEntity(
+							fulfillmentOrder);
+					fulfillmentOrderRepo.saveAndFlush(fulfillmentOrderEntity);
+					fullFulfillmentOrders.add(fulfillmentOrder);
+
+				} else {
+					System.out.println("Saving xml data to db failed");
+				}
+
+			} catch (Exception e) {
+				break;
+			}
+		}
+		return fullFulfillmentOrders;
 	}
-	
-	private FulfillmentOrderEntity generateFulfillmentOrderEntityFromDto(FulfillmentOrder fulfillmentOrder) {
-		if (fulfillmentOrder == null) {
-			return null;
+
+	public String cleanUpJsonBOM(String json) {
+		return json.trim().replaceFirst("\ufeff", "");
+	}
+
+	@Override
+	public List<OrderMessage> getJsonMessages() {
+		List<OrderMessage> orderMessages = new ArrayList<>();
+		Properties properties = rabbitAdmin.getQueueProperties(OrderMessageConsumerConfig.QueueType.JSON_QUEUE);
+		int requestCount = 0;
+		if (properties != null) {
+			requestCount = (int) properties.get(RabbitAdmin.QUEUE_MESSAGE_COUNT);
 		}
 
-		FulfillmentOrderEntity entity= new FulfillmentOrderEntity();
-		entity.setFulfillmentChannelCode(fulfillmentOrder.fulfillmentChannelCode);
-		return entity ;
+		for (int i = 0; i < requestCount; i++) {
 
+			try {
+				
+				String jsonString =new String((byte[]) jsontemplate.receiveAndConvert(QueueType.JSON_QUEUE));
+				jsonString =cleanUpJsonBOM(jsonString);
+				OrderMessage orderMessage = new ObjectMapper().readValue(jsonString
+						, OrderMessage.class);
+				System.out.println("json string is : " + orderMessage.toString());
+//				OrderMessage orderMessage =  (OrderMessage) jsontemplate.receiveAndConvert(QueueType.JSON_QUEUE);
+				OrderMessageEntity orderEntity = generateOrderMessageEntityFromDto(orderMessage);
+				OrderMessageEntity effectedEntity = null;
+
+				try {
+
+					effectedEntity = orderMessageRepo.save(orderEntity);
+					orderMessages.add(generateOrderMessageDtoFromEntity(orderEntity));
+
+				} catch (Exception e) {
+					e.printStackTrace();
+					break;
+				} finally {
+					if (effectedEntity == null) {
+						System.out.println("Save Jason data to db failed");
+					}
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+				System.out.println("Save Jason data to db failed");
+			}
+		}
+
+		return orderMessages;
+	}
+
+	public FulfillmentOrderEntity convertFulfillmentorderIntoFulfillmentorderEntity(FulfillmentOrder order) {
+		FulfillmentOrderEntity fulfillmentOrderEntity = new FulfillmentOrderEntity();
+
+		fulfillmentOrderEntity.orderID = order.orderID;
+		fulfillmentOrderEntity.orderStatus = order.orderStatus;
+		fulfillmentOrderEntity.orderStatusCode = order.orderStatusCode;
+		fulfillmentOrderEntity.orderStatusDescription = order.orderStatusDescription;
+		fulfillmentOrderEntity.orderTypeCode = order.orderTypeCode;
+		return fulfillmentOrderEntity;
 	}
 
 }

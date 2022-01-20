@@ -6,37 +6,42 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.Jackson2XmlMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.modelmapper.ModelMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Configuration
 public class OrderMessageConsumerConfig {
-	public static final String ROUTING_KEY = "message_routingkey";
-	public static final String QUEUE = "Message_queue";
+
+	public static final String ROUTING_KEY_JSON = "routing_key_json";
+	public static final String ROUTING_KEY_XML = "routing_key_xml";
 	public static final String MESSAGE_EXCHANGE = "message_exchange";
 
 	public static class QueueType {
-		public static final String QUEUE_1 = "Message queue_1";
-		public static final String QUEUE_2 = "Message queue_2";
+		public static final String XML_QUEUE = "XML_QUEUE";
+		public static final String JSON_QUEUE = "JSON_QUEUE";
 
 	}
 
+	@Autowired
+	private ConnectionFactory connectionFactory;
+
 	@Bean
-	public Queue queue() {
-		return new Queue(QUEUE);
+	public Queue queue_json() {
+		return new Queue(QueueType.JSON_QUEUE, true);
 	}
 
 	@Bean
-	public Queue queue_1() {
-		return new Queue(QueueType.QUEUE_1);
-	}
-
-	@Bean
-	public Queue queue_2() {
-		return new Queue(QueueType.QUEUE_2);
+	public Queue queue_xml() {
+		return new Queue(QueueType.XML_QUEUE, true);
 	}
 
 	@Bean
@@ -44,35 +49,57 @@ public class OrderMessageConsumerConfig {
 		return new TopicExchange(MESSAGE_EXCHANGE);
 	}
 
-//	@Bean
-//	public Binding binding(Queue queue, TopicExchange topicExchange) {
-//		return BindingBuilder.bind(queue).to(topicExchange).with(ROUTING_KEY);
-//
-//	}
-
-	
-
 	@Bean
-	Binding binding1(TopicExchange exchange) {
-		return BindingBuilder.bind(queue_1()).to(exchange).with(ROUTING_KEY);
+	public Binding bindingJson(TopicExchange exchange) {
+
+		return BindingBuilder.bind(queue_json()).to(exchange).with(ROUTING_KEY_JSON);
 	}
 
 	@Bean
-	Binding binding2(TopicExchange exchange) {
-		return BindingBuilder.bind(queue_2()).to(exchange).with(ROUTING_KEY);
+	public Binding bindingXml(TopicExchange exchange) {
+
+		return BindingBuilder.bind(queue_xml()).to(exchange).with(ROUTING_KEY_XML);
 	}
 
 	@Bean
-	public MessageConverter messageConverter() {
-		return new Jackson2JsonMessageConverter();
+	public MessageConverter messageConverterJson() {
+		ObjectMapper objectMapper = new ObjectMapper();
+		return new Jackson2JsonMessageConverter(objectMapper);
 	}
 
 	@Bean
-	public AmqpTemplate template(ConnectionFactory connectionFactory) {
+	public MessageConverter messageConverterXml() {
+		return new Jackson2XmlMessageConverter();
+	}
+
+	@Bean
+	public AmqpTemplate jsontemplate(ConnectionFactory connectionFactory) {
 
 		RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
-		rabbitTemplate.setMessageConverter(messageConverter());
+		rabbitTemplate.setMessageConverter(messageConverterJson());
+		rabbitTemplate.setDefaultReceiveQueue(QueueType.JSON_QUEUE);
+		rabbitTemplate.setRoutingKey(ROUTING_KEY_JSON);
 		return rabbitTemplate;
+	}
+
+	@Bean
+	public AmqpTemplate xmlAmpqTempleate(ConnectionFactory connectionFactory) {
+
+		RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
+		rabbitTemplate.setMessageConverter(messageConverterXml());
+		rabbitTemplate.setDefaultReceiveQueue(QueueType.XML_QUEUE);
+		rabbitTemplate.setRoutingKey(ROUTING_KEY_XML);
+		return rabbitTemplate;
+	}
+
+	@Bean
+	public RabbitAdmin rabbitAdmin(ConnectionFactory connectionFactory) {
+		return new RabbitAdmin(connectionFactory);
+	}
+
+	@Bean
+	public ModelMapper getModelMapper() {
+		return new ModelMapper();
 	}
 
 }
