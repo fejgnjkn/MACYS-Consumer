@@ -93,8 +93,10 @@ public class OrderMessageConsumerServiceImp implements OrderMessageConsumerServi
 		for (int i = 0; i < requestCount; i++) {
 			try {
 
+				String xmlString = new String((byte[]) xmlAmpqTempleate.receiveAndConvert());
+				xmlString = cleanUpJsonBOM(xmlString);
 				FulfillmentOrder fulfillmentOrder = new XmlMapper()
-						.readValue(new String((byte[]) xmlAmpqTempleate.receiveAndConvert()), FulfillmentOrder.class);
+						.readValue(xmlString, FulfillmentOrder.class);
 
 				if (fulfillmentOrder != null) {
 
@@ -108,6 +110,8 @@ public class OrderMessageConsumerServiceImp implements OrderMessageConsumerServi
 				}
 
 			} catch (Exception e) {
+				e.printStackTrace();
+				System.out.println("Saving xml data to db failed");
 				break;
 			}
 		}

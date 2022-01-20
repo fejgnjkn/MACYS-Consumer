@@ -1,5 +1,7 @@
 package com.zensar.entity;
 
+import java.io.Serializable;
+
 import javax.persistence.CascadeType;
 import javax.persistence.Entity;
 import javax.persistence.FetchType;
@@ -11,7 +13,7 @@ import javax.persistence.Table;
 
 @Entity
 @Table(name="BILLING_ADDRESS")
-public class BillingAddressEntity {
+public class BillingAddressEntity  implements Serializable{
 	@Id
 	@GeneratedValue
 	public int id;
